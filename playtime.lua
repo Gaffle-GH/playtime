@@ -52,7 +52,8 @@ SMODS.Joker{
         name = 'Dodgeball!',
         text = {
             'Retriggers all played cards {C:attention}#1#{} time(s)',
-            'Gains {C:attention}+1{} retrigger after each {C:attention}Blind{}',
+            'Gains {C:attention}+1{} retrigger after each {C:attention}Blind{}.',
+            '',
             '{C:green}#2# in #3#{} chance to {C:red}deflate{} after each hand'
         }
     },
@@ -98,9 +99,6 @@ SMODS.Joker{
         if context.after and not context.blueprint then
             -- Play sound after all retriggering is done
             play_sound("playtime_dodgebonk", 1.0, 0.6)
-            return {
-                message = "Done!"
-            }
         end
 
 
@@ -158,7 +156,7 @@ SMODS.Joker{
                 }))
 
                 return {
-                    message = "Flattened.!",
+                    message = "Flattened!",
                     colour = G.C.RED
                 }
             end
@@ -177,31 +175,61 @@ SMODS.Joker{
     rarity = 3,
     cost = 20,
 
+    config = {
+        extra = {
+            hands_played = 0,
+            money_per_cycle = 10,
+            hands_per_cycle = 2
+        }
+    },
+
     loc_txt = {
         name = 'Literal Pan',
         text = {
             '{C:red}Destroys{} a random card in hand,',
-            'creates a random Joker',
-            ' '
+            'creates a random Joker.',
+            ' ',
             'If there is no room for a new Joker,',
-            '{C:red}Destroys{} a random card in hand,',
-            ''
+            'Earns {C:money}$#1#{} every {C:attention}#2#{} hands.',
+            '{C:inactive}(#3#/#2# hands played){}',
+            '',
             '{C:inactive}(Must Have Room)'
         }
     },
 
+    loc_vars = function(self, info_queue, center)
+        -- Add credits info box
+        info_queue[#info_queue+1] = {
+            set = 'Other',
+            key = 'playtime_pan_credits'
+        }
+        
+        return {vars = {
+            center.ability.extra.money_per_cycle or 10,
+            center.ability.extra.hands_per_cycle or 2,
+            center.ability.extra.hands_played or 0
+        }}
+    end,
+
     calculate = function(self, card, context)
+        -- Initialize extra fields if they don't exist
+        if not card.ability.extra.hands_played then
+            card.ability.extra.hands_played = 0
+        end
+        if not card.ability.extra.money_per_cycle then
+            card.ability.extra.money_per_cycle = 10
+        end
+        if not card.ability.extra.hands_per_cycle then
+            card.ability.extra.hands_per_cycle = 2
+        end
+
+        -- After playing a hand
         if context.after and not context.blueprint then
             -- Check if there's room for a new joker
-            if #G.jokers.cards >= G.jokers.config.card_limit then
-                return {
-                    message = "No Room!",
-                    colour = G.C.RED
-                }
-            end
-
-            -- Delete a random card from hand if any exist
-            if #G.hand.cards > 0 then
+            local has_room = #G.jokers.cards < G.jokers.config.card_limit
+            
+            if has_room and #G.hand.cards > 0 then
+                -- Delete a random card from hand if any exist
                 local card_to_delete = G.hand.cards[math.random(#G.hand.cards)]
                 
                 G.E_MANAGER:add_event(Event({
@@ -235,10 +263,39 @@ SMODS.Joker{
                     message = "Pan'd!",
                     colour = G.C.ORANGE
                 }
+            else
+                -- No room for jokers - earn money instead
+                -- Increment hand counter
+                card.ability.extra.hands_played = card.ability.extra.hands_played + 1
+
+                -- Check if we've reached the cycle
+                if card.ability.extra.hands_played >= card.ability.extra.hands_per_cycle then
+                    -- Reset counter
+                    card.ability.extra.hands_played = 0
+                    
+                    -- Give money
+                    ease_dollars(card.ability.extra.money_per_cycle)
+                    
+                    card_eval_status_text(card, 'dollars', card.ability.extra.money_per_cycle, nil, nil, {
+                        message = localize('$') .. card.ability.extra.money_per_cycle,
+                        colour = G.C.MONEY
+                    })
+                    
+                    return {
+                        message = "Ca-Ching!",
+                        colour = G.C.MONEY
+                    }
+                else
+                    return {
+                        message = card.ability.extra.hands_played .. "/" .. card.ability.extra.hands_per_cycle,
+                        colour = G.C.UI.TEXT_INACTIVE
+                    }
+                end
             end
         end
     end
 }
+
 --------------------------------------------------
 -- Door?
 --------------------------------------------------
@@ -252,11 +309,43 @@ SMODS.Joker{
     loc_txt = {
         name = 'Door',
         text = {
-            'A strange door. Who knows where it leads?'
+            'A strange door.',
+            'Who knows where it leads?'
         }
     },
+
+    loc_vars = function(self, info_queue, center)
+        -- Add credits info box
+        info_queue[#info_queue+1] = {
+            set = 'Other',
+            key = 'playtime_door_credits'
+        }
+    end,
 
     calculate = function(self, card, context)
         return {}
     end
 }
+
+
+--------------------------------------------------
+-- Add Custom Localization (Credits Boxes)
+--------------------------------------------------
+-- This gets injected when items are loaded
+SMODS.current_mod.process_loc_text = function()
+    G.localization.descriptions.Other = G.localization.descriptions.Other or {}
+    
+    G.localization.descriptions.Other.playtime_pan_credits = {
+        name = "Credits",
+        text = {
+            "Concept by: {C:attention}Mystery Person{}",
+        }
+    }
+    
+    G.localization.descriptions.Other.playtime_door_credits = {
+        name = "Credits",
+        text = {
+            "Concept by: {C:attention}Mystery Person{}",
+        }
+    }
+end
